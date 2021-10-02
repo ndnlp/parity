@@ -1,8 +1,6 @@
 import torch
 import math
 
-verbose = False
-
 class SigmoidAttention(torch.nn.Module):
     """No dropout."""
     def __init__(self, embed_dim, num_heads):
@@ -77,30 +75,23 @@ class PrenormTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
 class PostnormTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
     """Norm after residual"""
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
-        src2, src2_weights = self.self_attn(
+        src2, self.last_weights = self.self_attn(
             src,
             src,
             src,
             attn_mask=src_mask,
             key_padding_mask=src_key_padding_mask)
-        if verbose:
-            print('c', src2[0][0])
-            print('α', src2_weights[0][0])
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
         src = src + self.dropout2(src2)
         src = self.norm2(src)
-        if verbose:
-            print('out', src[0][0])
         return src
 
 class ScaledTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2 = self.self_attn(
             src*math.log(len(src))/2,
-            #src*len(src),
-            #src,
             src,
             src,
             attn_mask=src_mask,
