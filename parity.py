@@ -20,9 +20,9 @@ class Model(torch.nn.Module):
         ], dim=1)
         self.pos_adapter = torch.nn.Linear(self.pos_embedding.size()[1], size)
 
-        #encoder_layer = torch.nn.TransformerEncoderLayer(d_model=size, nhead=2, dim_feedforward=size*4, dropout=0.)
+        encoder_layer = torch.nn.TransformerEncoderLayer(d_model=size, nhead=2, dim_feedforward=size*4, dropout=0.)
         #encoder_layer = encoder.ScaledTransformerEncoderLayer(d_model=size, nhead=2, dim_feedforward=size*4, dropout=0.)
-        encoder_layer = encoder.SigmoidTransformerEncoderLayer(d_model=size, nhead=4, dim_feedforward=size*4, dropout=0.)
+        #encoder_layer = encoder.SigmoidTransformerEncoderLayer(d_model=size, nhead=4, dim_feedforward=size*4, dropout=0.)
         self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=2)
 
         self.output_layer = torch.nn.Linear(size, 1)

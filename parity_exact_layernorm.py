@@ -6,7 +6,7 @@ import encoder
 log_sigmoid = torch.nn.LogSigmoid()
 
 perturb = 0.01
-alphabet = ["0", "1", "$"]
+train = True
 n_max = 100
 num_epochs = 100
 num_steps = 100
@@ -196,7 +196,8 @@ for epoch in range(num_epochs):
         epoch_steps += 1
         optim.zero_grad()
         loss.backward()
-        optim.step()
+        if train:
+            optim.step()
 
     if epoch_loss < best_epoch_loss:
         best_epoch_loss = epoch_loss
