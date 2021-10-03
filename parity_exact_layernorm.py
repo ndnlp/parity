@@ -3,7 +3,13 @@ import math
 import random
 import encoder
 
+log_sigmoid = torch.nn.LogSigmoid()
+
+perturb = 0.01
 alphabet = ["0", "1", "$"]
+n_max = 100
+num_epochs = 100
+num_steps = 100
 
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
@@ -54,11 +60,9 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2 = self.self_attn(src, src, src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
-        #src2 = self.norm1(src2) # norm before residual
         src = src + self.dropout1(src2)
-        src = self.norm1(src) # norm after residual
+        src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
-        #src2 = self.norm2(src2)
         src = src + self.dropout2(src2)
         src = self.norm2(src)
         return src
@@ -119,11 +123,9 @@ class SecondLayer(torch.nn.TransformerEncoderLayer):
         v = src
         src2 = self.self_attn(q, src, v, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
-        #src2 = self.norm1(src2)
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
-        #src2 = self.norm2(src2)
         src = src + self.dropout2(src2)
         src = self.norm2(src)
         return src
@@ -164,47 +166,37 @@ class Model(torch.nn.Module):
         return z
 
 model = Model()
-#optim = torch.optim.Adam(model.parameters(), lr=3e-4)
-optim = torch.optim.SGD(model.parameters(), lr=1e-8)
-
-n_max = 1000
+optim = torch.optim.Adam(model.parameters(), lr=3e-4)
 
 best_epoch_loss = float('inf')
 no_improvement = 0
 
-graph_s = {}
-graph_n = {}
+# Perturb parameters
+if perturb > 0:
+    with torch.no_grad():
+        for p in model.parameters():
+            p += torch.randn(p.size()) * perturb
 
-for epoch in range(10000):
+for epoch in range(num_epochs):
     epoch_loss = 0
     epoch_steps = 0
     epoch_correct = 0
-    # Perturb parameters
-    if False:
-        with torch.no_grad():
-            for p in model.parameters():
-                p += torch.randn(p.size()) * 1e-3 # 1e-2 works, 1e-1 is too hard
-    for step in range(1000):
+    
+    for step in range(num_steps):
         n = random.randrange(1, n_max+1)
         w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
-        o = len([a for a in w if a == 1]) % 2 == 1
-        y = model(w)
-        graph_s.setdefault(n, 0.)
-        graph_n.setdefault(n, 0.)
-        graph_s[n] += y.item()**2
-        graph_n[n] += 1
+        label = len([a for a in w if a == 1]) % 2 == 1
+        output = model(w)
 
         # Cross-entropy loss
-        p = torch.sigmoid(y)
-        if not o: p = 1-p
-        loss = -torch.log(p)
-        if p > 0.5: epoch_correct += 1
-
+        if not label: output = -output
+        if output > 0: epoch_correct += 1
+        loss = -log_sigmoid(output)
         epoch_loss += loss.item()
         epoch_steps += 1
         optim.zero_grad()
         loss.backward()
-        #optim.step()
+        optim.step()
 
     if epoch_loss < best_epoch_loss:
         best_epoch_loss = epoch_loss
@@ -216,23 +208,20 @@ for epoch in range(10000):
             print(f"lr={optim.param_groups[0]['lr']}")
             no_improvement = 0
         
-    valid_loss = 0
-    valid_steps = 0
-    valid_correct = 0
-    for step in range(100):
+    test_loss = 0
+    test_steps = 0
+    test_correct = 0
+    for step in range(num_steps):
         n = random.randrange(1, n_max+1)
-        #n = random.randrange(n_max+1, 10*n_max+1)
         w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
-        o = len([a for a in w if a == 1]) % 2 == 1
-        y = model(w)
+        label = len([a for a in w if a == 1]) % 2 == 1
+        output = model(w)
         
         # Cross-entropy loss
-        p = torch.sigmoid(y)
-        if not o: p = 1-p
-        loss = -torch.log(p)
-        if p > 0.5: valid_correct += 1
-        
-        valid_loss += loss.item()
-        valid_steps += 1
+        if not label: output = -output
+        if output > 0: test_correct += 1
+        loss = -log_sigmoid(output)
+        test_loss += loss.item()
+        test_steps += 1
 
-    print(f'n_max={n_max} train_ce={epoch_loss/epoch_steps/math.log(2)} train_acc={epoch_correct/epoch_steps} valid_ce={valid_loss/valid_steps/math.log(2)} valid_acc={valid_correct/valid_steps}')
+    print(f'n_max={n_max} train_ce={epoch_loss/epoch_steps/math.log(2)} train_acc={epoch_correct/epoch_steps} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}')
