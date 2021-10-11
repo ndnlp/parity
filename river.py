@@ -1,8 +1,9 @@
 import sys
 import math
 
-scale = 1/100/math.log(2)
+#scale = 1/100/math.log(2)
 #scale = 100
+scale = 1
 
 data = []
 for line in sys.stdin:

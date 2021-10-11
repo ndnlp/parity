@@ -4,6 +4,17 @@ import math
 import random
 import tqdm
 import sys
+import argparse
+
+log_sigmoid = torch.nn.LogSigmoid()
+
+ap = argparse.ArgumentParser()
+ap.add_argument('--train_length', type=int, default=50)
+ap.add_argument('--test_length', type=int, default=1000)
+ap.add_argument('--trial', type=int, default=0)
+ap.add_argument('--epochs', type=int, default=100)
+ap.add_argument('--steps', type=int, default=100)
+args = ap.parse_args()
 
 alphabet = ["0", "1", "$"]
 alphabet_index = {a:i for i,a in enumerate(alphabet)}
@@ -33,88 +44,56 @@ class Model(torch.nn.Module):
         x = self.word_embedding(w) + self.pos_adapter(self.pos_embedding[:len(w)])
         y = self.encoder(x.unsqueeze(1)).squeeze(1)
         y = y[0]
-        z = torch.sigmoid(self.output_layer(y))
+        z = self.output_layer(y)
         return z
 
-n_trials = 20
-n_epochs = 100
-n_steps = 100
+model = Model(len(alphabet), size)
+optim = torch.optim.Adam(model.parameters(), lr=0.0003)
 
-train_graph = torch.zeros(n_trials, n_epochs, requires_grad=False)
-valid_graph = torch.zeros(n_trials, n_epochs, requires_grad=False)
-valid_acc_graph = torch.zeros(n_trials, n_epochs, requires_grad=False)
-valid_att_graph = torch.zeros(n_trials, n_epochs, 2, requires_grad=False)
+for epoch in range(args.epochs):
+    train_loss = train_correct = train_num = 0
+    train_alpha = torch.zeros(2)
+    for step in range(args.steps):
+        n = args.train_length
+        w = torch.tensor([alphabet_index['$']] + [alphabet_index[str(random.randrange(2))] for i in range(n)])
+        label = w[1] == alphabet_index['1']
+        output = model(w)
+        for l in range(2):
+            train_alpha[l] += model.encoder.layers[l].last_weights[0][0][1].detach()
+        if not label: output = -output
+        if output > 0: train_correct += 1
+        train_num += 1
+        loss = -log_sigmoid(output)
+        train_loss += loss.item()
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+        
+    with torch.no_grad():
+        test_loss = test_num = test_correct = 0
+        test_alpha = torch.zeros(len(model.encoder.layers))
+        for step in range(args.steps):
+            n = args.test_length
+            w = torch.tensor([2] + [random.randrange(2) for i in range(n)])
+            label = w[1] == alphabet_index['1']
+            output = model(w)
+            for l, layer in enumerate(model.encoder.layers):
+                # weight of CLS attending to first symbol
+                test_alpha[l] += model.encoder.layers[l].last_weights[0][0][1]
+            if not label: output = -output
+            if output > 0: test_correct += 1
+            test_num += 1
+            loss = -log_sigmoid(output)
+            test_loss += loss.item()
 
-with open(sys.argv[1], 'w') as outfile:
-
-    for n in range(10, 101, 10):
-    
-        for trial in tqdm.tqdm(range(n_trials)):
-            model = Model(len(alphabet), size)
-            optim = torch.optim.Adam(model.parameters(), lr=0.0003)
-
-            for epoch in range(n_epochs):
-
-                epoch_loss = 0
-                for step in range(n_steps):
-                    #n = random.randrange(1, 101)
-                    n = 10 * (trial+1)
-                    w = torch.tensor([alphabet_index['$']] + [alphabet_index[str(random.randrange(2))] for i in range(n)])
-                    o = w[1] == alphabet_index['1']
-                    p = model(w)
-                    if not o: p = 1-p
-                    loss = -torch.log(p)
-                    epoch_loss += loss.item()
-                    optim.zero_grad()
-                    loss.backward()
-                    optim.step()
-                train_graph[trial, epoch] = epoch_loss
-
-                valid_loss = 0
-                valid_num = 0
-                valid_correct = 0
-                alpha = torch.zeros(2)
-                for step in range(n_steps):
-                    #n = random.randrange(101, 1001)
-                    n = 1000
-                    w = torch.tensor([2] + [random.randrange(2) for i in range(n)])
-                    o = w[1] == alphabet_index['1']
-                    p = model(w)
-                    for l in range(2):
-                        alpha[l] += model.encoder.layers[l].last_weights[0][0][1].detach()
-                    if not o: p = 1-p
-                    if p > 0.5: valid_correct += 1
-                    valid_num += 1
-                    loss = -torch.log(p)
-                    valid_loss += loss.item()
-                valid_graph[trial, epoch] = valid_loss
-                valid_acc_graph[trial, epoch] = valid_correct/valid_num
-                valid_att_graph[trial, epoch] = alpha/valid_num
-
-        print(n,
-              train_graph[:,-1].mean().item(),
-              train_graph[:,-1].std().item(),
-              valid_graph[:,-1].mean().item(),
-              valid_graph[:,-1].std().item(),
-              valid_acc_graph[:,-1].mean().item(),
-              valid_acc_graph[:,-1].std().item(),
-              valid_att_graph[:,-1,0].mean().item(),
-              valid_att_graph[:,-1,0].std().item(),
-              valid_att_graph[:,-1,1].mean().item(),
-              valid_att_graph[:,-1,1].std().item(),
-              file=outfile)
-
-
-        """for epoch in range(n_epochs):
-            print(epoch+1,
-                  train_graph[:,epoch].mean().item(),
-                  train_graph[:,epoch].std().item(),
-                  valid_graph[:,epoch].mean().item(),
-                  valid_graph[:,epoch].std().item(),
-                  valid_acc_graph[:,epoch].mean().item(),
-                  valid_acc_graph[:,epoch].std().item(),
-                  valid_att_graph[:,epoch,0].mean().item(),
-                  valid_att_graph[:,epoch,0].std().item(),
-                  valid_att_graph[:,epoch,1].mean().item(),
-                  valid_att_graph[:,epoch,1].std().item(),
-                  file=outfile)"""
+    print(args.train_length,
+          args.test_length,
+          args.trial+1,
+          epoch+1,
+          train_loss,
+          train_correct/train_num,
+          ' '.join(str(a.item()/test_num) for a in train_alpha),
+          test_loss,
+          test_correct/test_num,
+          ' '.join(str(a.item()/test_num) for a in test_alpha),
+          flush=True)
