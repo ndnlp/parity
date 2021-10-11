@@ -2,14 +2,20 @@ import torch
 import math
 import random
 import encoder
+import argparse
+
+ap = argparse.ArgumentParser()
+ap.add_argument('--train_length', dest='train_length', type=int, default=100)
+ap.add_argument('--test_length', dest='test_length', type=int, default=100)
+ap.add_argument('--epochs', dest='epochs', type=int, default=100)
+ap.add_argument('--steps', dest='steps', type=int, default=100)
+ap.add_argument('--eps', dest='eps', type=float, default=1e-5)
+args = ap.parse_args()
 
 log_sigmoid = torch.nn.LogSigmoid()
 
-perturb = 0.01
-train = True
-n_max = 100
-num_epochs = 100
-num_steps = 100
+perturb = 0
+train = False
 
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
@@ -56,6 +62,8 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
             [[0, 0, 0]]*2,
             dtype=torch.float))
         self.linear2.bias = torch.nn.Parameter(torch.zeros(20))
+        
+        self.norm1.eps = self.norm2.eps = args.eps
     
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2 = self.self_attn(src, src, src, attn_mask=src_mask,
@@ -118,6 +126,8 @@ class SecondLayer(torch.nn.TransformerEncoderLayer):
         self.linear2.weight = torch.nn.Parameter(w.to(torch.float))
         self.linear2.bias = torch.nn.Parameter(torch.zeros(20))
 
+        self.norm1.eps = self.norm2.eps = args.eps
+        
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         q = src
         v = src
@@ -177,13 +187,13 @@ if perturb > 0:
         for p in model.parameters():
             p += torch.randn(p.size()) * perturb
 
-for epoch in range(num_epochs):
+for epoch in range(args.epochs):
     epoch_loss = 0
     epoch_steps = 0
     epoch_correct = 0
     
-    for step in range(num_steps):
-        n = random.randrange(1, n_max+1)
+    for step in range(args.steps):
+        n = args.train_length
         w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
         label = len([a for a in w if a == 1]) % 2 == 1
         output = model(w)
@@ -212,8 +222,8 @@ for epoch in range(num_epochs):
     test_loss = 0
     test_steps = 0
     test_correct = 0
-    for step in range(num_steps):
-        n = random.randrange(1, n_max+1)
+    for step in range(args.steps):
+        n = args.test_length
         w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
         label = len([a for a in w if a == 1]) % 2 == 1
         output = model(w)
@@ -225,4 +235,4 @@ for epoch in range(num_epochs):
         test_loss += loss.item()
         test_steps += 1
 
-    print(f'n_max={n_max} train_ce={epoch_loss/epoch_steps/math.log(2)} train_acc={epoch_correct/epoch_steps} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}')
+    print(f'train_length={args.train_length} train_ce={epoch_loss/epoch_steps/math.log(2)} train_acc={epoch_correct/epoch_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}')
