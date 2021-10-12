@@ -5,8 +5,6 @@ import random
 import sys
 import argparse
 
-log_sigmoid = torch.nn.LogSigmoid()
-
 ap = argparse.ArgumentParser()
 ap.add_argument('--length', type=int, default=100)
 ap.add_argument('--steps', type=int, default=100)
@@ -16,6 +14,21 @@ args = ap.parse_args()
 alphabet = ["0", "1", "$"]
 alphabet_index = {a:i for i,a in enumerate(alphabet)}
 max_pos = 10000
+
+log_sigmoid = torch.nn.LogSigmoid()
+
+class PositionEncoding(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, n):
+        zero = torch.zeros(n)
+        pos = torch.arange(0, n).to(torch.float)
+        pe = torch.stack([zero]*3 +
+                         [pos == 1] +
+                         [zero]*2,
+                         dim=1)
+        return pe
 
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
@@ -96,12 +109,7 @@ class Model(torch.nn.Module):
         super().__init__()
         
         self.word_embedding = torch.eye(3, 6)
-        self.pos_embedding = torch.stack(
-            [torch.zeros(max_pos)]*3 +
-            [torch.arange(0, max_pos, dtype=torch.float) == 1] +
-            [torch.zeros(max_pos)]*2,
-            dim=1)
-
+        self.pos_encoding = PositionEncoding()
         self.transformer_encoder = MyTransformerEncoder()
         self.output_layer = torch.nn.Linear(6, 1)
         self.output_layer.weight = torch.nn.Parameter(torch.tensor(
@@ -109,7 +117,7 @@ class Model(torch.nn.Module):
         self.output_layer.bias = torch.nn.Parameter(torch.tensor([0.]))
 
     def forward(self, w):
-        x = self.word_embedding[w] + self.pos_embedding[:len(w)]
+        x = self.word_embedding[w] + self.pos_encoding(len(w))
         y = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
         z = self.output_layer(y[0])
         return z

@@ -7,6 +7,17 @@ import argparse
 
 log_sigmoid = torch.nn.LogSigmoid()
 
+class PositionEncoding(torch.nn.Module):
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+
+    def forward(self, n):
+        zero = torch.zeros(n)
+        pos = torch.arange(0, n).to(torch.float)
+        pe = torch.stack([pos == 1] + [zero]*(self.size-1), dim=1)
+        return pe
+
 ap = argparse.ArgumentParser()
 ap.add_argument('--train_length', type=int, default=50)
 ap.add_argument('--test_length', type=int, default=1000)
@@ -17,7 +28,6 @@ args = ap.parse_args()
 
 alphabet = ["0", "1", "$"]
 alphabet_index = {a:i for i,a in enumerate(alphabet)}
-max_pos = 10000
 size = 16
 
 class Model(torch.nn.Module):
@@ -25,14 +35,9 @@ class Model(torch.nn.Module):
         super().__init__()
         
         self.word_embedding = torch.nn.Embedding(num_embeddings=alphabet_size, embedding_dim=size)
-        self.pos_embedding = torch.stack([
-            torch.arange(0, max_pos, dtype=torch.float) == 0,
-            torch.arange(0, max_pos, dtype=torch.float) == 1,
-            torch.arange(0, max_pos, dtype=torch.float) >= 2,
-        ], dim=1).to(torch.float)
-        self.pos_adapter = torch.nn.Linear(self.pos_embedding.size()[1], size)
+        self.pos_encoding = PositionEncoding(size)
 
-        encoder_layer = encoder.PostnormTransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
+        encoder_layer = encoder.TransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
         #encoder_layer = encoder.ScaledTransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
         #encoder_layer.norm1.eps = encoder_layer.norm2.eps = 0.
         self.encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=2)
@@ -40,7 +45,7 @@ class Model(torch.nn.Module):
         self.output_layer = torch.nn.Linear(size, 1)
 
     def forward(self, w):
-        x = self.word_embedding(w) + self.pos_adapter(self.pos_embedding[:len(w)])
+        x = self.word_embedding(w) + self.pos_encoding(len(w))
         y = self.encoder(x.unsqueeze(1)).squeeze(1)
         y = y[0]
         z = self.output_layer(y)
