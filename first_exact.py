@@ -2,13 +2,20 @@ import torch
 import encoder
 import math
 import random
-import tqdm
 import sys
+import argparse
+
+log_sigmoid = torch.nn.LogSigmoid()
+
+ap = argparse.ArgumentParser()
+ap.add_argument('--length', type=int, default=100)
+ap.add_argument('--steps', type=int, default=100)
+ap.add_argument('--big', dest='big', type=float, default=1.)
+args = ap.parse_args()
 
 alphabet = ["0", "1", "$"]
 alphabet_index = {a:i for i,a in enumerate(alphabet)}
 max_pos = 10000
-big = 10
 
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
@@ -22,15 +29,13 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
         self.linear1.weight = torch.nn.Parameter(torch.tensor([
             [0,1,0,1,0,0],
         ], dtype=torch.float))
-        self.linear1.bias = torch.nn.Parameter(torch.tensor([-1], dtype=torch.float))
+        self.linear1.bias = torch.nn.Parameter(torch.tensor([-1.]))
         self.linear2.weight = torch.nn.Parameter(torch.tensor(
             [[0]]*4 +
             [[1],
              [0]],
             dtype=torch.float))
-        self.linear2.bias = torch.nn.Parameter(torch.tensor(
-            [0,0,0,0,0,0],
-            dtype=torch.float))
+        self.linear2.bias = torch.nn.Parameter(torch.zeros(6))
     
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2 = self.self_attn(src, src, src, attn_mask=src_mask,
@@ -49,7 +54,7 @@ class SecondLayer(torch.nn.TransformerEncoderLayer):
         super().__init__(6, 1, 1, dropout=0.)
         self.self_attn.in_proj_weight = torch.nn.Parameter(torch.tensor(
             # W^Q
-            [[0,0,big,0,0,0]] +
+            [[0,0,args.big,0,0,0]] +
             [[0]*6]*5 +
             # W^K
             [[0,0,0,1,0,0]] +
@@ -71,9 +76,7 @@ class SecondLayer(torch.nn.TransformerEncoderLayer):
         self.linear1.weight = torch.nn.Parameter(torch.zeros(1,6))
         self.linear1.bias = torch.nn.Parameter(torch.zeros(1))
         self.linear2.weight = torch.nn.Parameter(torch.zeros(6,1))
-        self.linear2.bias = torch.nn.Parameter(torch.tensor(
-            [0,0,0,0,0,0],
-            dtype=torch.float))
+        self.linear2.bias = torch.nn.Parameter(torch.zeros(6))
 
     forward = FirstLayer.forward
 
@@ -106,29 +109,25 @@ class Model(torch.nn.Module):
         self.output_layer.bias = torch.nn.Parameter(torch.tensor([0.]))
 
     def forward(self, w):
-        print(w)
         x = self.word_embedding[w] + self.pos_embedding[:len(w)]
         y = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
         z = self.output_layer(y[0])
-        print(z)
-        return torch.sigmoid(z)
+        return z
 
 model = Model()
 
-valid_loss = 0
-valid_num = 0
-valid_correct = 0
-n_steps = 1000
-for step in range(n_steps):
-    n = random.randrange(1, 11)
+loss = 0
+total = 0
+correct = 0
+for step in range(args.steps):
+    n = args.length
     w = torch.tensor([alphabet_index['$']] + [alphabet_index[str(random.randrange(2))] for i in range(n)])
-    o = w[1] == alphabet_index['1']
-    p = model(w)
-    if not o: p = 1-p
-    if p > 0.5:
-        valid_correct += 1
-    valid_num += 1
-    loss = -torch.log(p)
-    valid_loss += loss.item()
-print(f'ce={valid_loss/valid_num/math.log(2)} acc={valid_correct/valid_num}')
+    label = w[1] == alphabet_index['1']
+    output = model(w)
+    if not label: output = -output
+    if output > 0:
+        correct += 1
+    total += 1
+    loss -= log_sigmoid(output).item()
+print(f'length={n} ce={loss/total/math.log(2)} acc={correct/total}')
 

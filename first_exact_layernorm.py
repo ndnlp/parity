@@ -2,13 +2,22 @@ import torch
 import encoder
 import math
 import random
-import tqdm
 import sys
+import argparse
+
+log_sigmoid = torch.nn.LogSigmoid()
+
+ap = argparse.ArgumentParser()
+ap.add_argument('--length', type=int, default=100)
+ap.add_argument('--steps', type=int, default=100)
+ap.add_argument('--big', dest='big', type=float, default=1.)
+ap.add_argument('--eps', dest='eps', type=float, default=1e-5)
+ap.add_argument('--bad', dest='bad', action='store_true', default=False)
+args = ap.parse_args()
 
 alphabet = ["0", "1", "$"]
 alphabet_index = {a:i for i,a in enumerate(alphabet)}
 max_pos = 10000
-big = 100
 
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
@@ -20,9 +29,9 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
         self.self_attn.out_proj.bias = torch.nn.Parameter(torch.zeros(12))
 
         self.linear1.weight = torch.nn.Parameter(torch.tensor([
-            [0,1,0,1,0,0, 0,0,0,0,0,0],
+            [-1,0,-1,1,0,0, 0,0,0,0,0,0],
         ], dtype=torch.float))
-        self.linear1.bias = torch.nn.Parameter(torch.tensor([-1], dtype=torch.float))
+        self.linear1.bias = torch.nn.Parameter(torch.tensor([0.]))
         self.linear2.weight = torch.nn.Parameter(torch.tensor(
             [[0]]*4 +
             [[1],
@@ -31,20 +40,16 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
             [[-1],
              [0]],
             dtype=torch.float))
-        self.linear2.bias = torch.nn.Parameter(torch.tensor(
-            [0]*12,
-            dtype=torch.float))
+        self.linear2.bias = torch.nn.Parameter(torch.zeros(12))
 
-        self.norm1.eps = self.norm2.eps = 0.
+        self.norm1.eps = self.norm2.eps = args.eps
     
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2 = self.self_attn(src, src, src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
-        #src2 = self.norm1(src2) # norm before residual
         src = src + self.dropout1(src2)
-        src = self.norm1(src) # norm after residual
+        src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
-        #src2 = self.norm2(src2)
         src = src + self.dropout2(src2)
         src = self.norm2(src)
         return src
@@ -54,7 +59,7 @@ class SecondLayer(torch.nn.TransformerEncoderLayer):
         super().__init__(12, 1, 12, dropout=0.)
         self.self_attn.in_proj_weight = torch.nn.Parameter(torch.tensor(
             # W^Q
-            [[0,0,big,0,0,0, 0,0,0,0,0,0]] +
+            [[0,0,args.big,0,0,0, 0,0,0,0,0,0]] +
             [[0]*12]*11 +
             # W^K
             [[0,0,0,1,0,0, 0,0,0,0,0,0]] +
@@ -83,11 +88,9 @@ class SecondLayer(torch.nn.TransformerEncoderLayer):
         # Preserve dim 5
         w[5,5] = w[5,11] = w[11,5] = w[11,11] = 0
         self.linear2.weight = torch.nn.Parameter(w)
-        self.linear2.bias = torch.nn.Parameter(torch.tensor(
-            [0]*12,
-            dtype=torch.float))
-        
-        self.norm1.eps = self.norm2.eps = 0.
+        self.linear2.bias = torch.nn.Parameter(torch.zeros(12))
+
+        self.norm1.eps = self.norm2.eps = args.eps
 
     forward = FirstLayer.forward
 
@@ -124,24 +127,21 @@ class Model(torch.nn.Module):
         x = torch.cat([x, -x], dim=-1)
         y = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
         z = self.output_layer(y[0])
-        z *= big
-        return torch.sigmoid(z)
+        return z
 
 model = Model()
 
-valid_loss = 0
-valid_num = 0
-valid_correct = 0
-n_steps = 1000
-for step in range(n_steps):
-    n = random.randrange(1, 11)
+loss = 0
+total = 0
+correct = 0
+for step in range(args.steps):
+    n = args.length
     w = torch.tensor([alphabet_index['$']] + [alphabet_index[str(random.randrange(2))] for i in range(n)])
-    o = w[1] == alphabet_index['1']
-    p = model(w)
-    if not o: p = 1-p
-    if p > 0.5:
-        valid_correct += 1
-    valid_num += 1
-    loss = -torch.log(p)
-    valid_loss += loss.item()
-print(f'ce={valid_loss/valid_num/math.log(2)} acc={valid_correct/valid_num}')
+    label = w[1] == alphabet_index['1']
+    output = model(w)
+    if not label: output = -output
+    if output > 0:
+        correct += 1
+    total += 1
+    loss -= log_sigmoid(output).item()
+print(f'length={n} ce={loss/total/math.log(2)} acc={correct/total}')

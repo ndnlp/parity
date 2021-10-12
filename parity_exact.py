@@ -9,12 +9,13 @@ ap.add_argument('--train_length', dest='train_length', type=int, default=100)
 ap.add_argument('--test_length', dest='test_length', type=int, default=100)
 ap.add_argument('--epochs', dest='epochs', type=int, default=100)
 ap.add_argument('--steps', dest='steps', type=int, default=100)
+ap.add_argument('--big', dest='big', type=float, default=1.)
 args = ap.parse_args()
-
-log_sigmoid = torch.nn.LogSigmoid()
 
 perturb = 0.
 train = False
+
+log_sigmoid = torch.nn.LogSigmoid()
 
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
@@ -72,9 +73,9 @@ class SecondLayer(torch.nn.TransformerEncoderLayer):
         self.self_attn.in_proj_weight = torch.nn.Parameter(torch.tensor(
             # W^Q
             # Heads 1 and 2 attend from CLS
-            [[0,0,1,0,0,0,0,0,0,0]] +
+            [[0,0,args.big,0,0,0,0,0,0,0]] +
             [[0]*10]*4 +
-            [[0,0,1,0,0,0,0,0,0,0]] +
+            [[0,0,args.big,0,0,0,0,0,0,0]] +
             [[0]*10]*4 +
             # W^K
             # Head 1 attends to odd positions
@@ -163,29 +164,27 @@ if perturb > 0:
             p += torch.randn(p.size()) * perturb
 
 for epoch in range(args.epochs):
-    epoch_loss = 0
-    epoch_steps = 0
-    epoch_correct = 0
+    train_loss = 0
+    train_steps = 0
+    train_correct = 0
 
     for step in range(args.steps):
         n = args.train_length
         w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
         label = len([a for a in w if a == 1]) % 2 == 1
         output = model(w)
-
-        # Cross-entropy loss
         if not label: output = -output
-        if output > 0: epoch_correct += 1
+        if output > 0: train_correct += 1
         loss = -log_sigmoid(output)
-        epoch_loss += loss.item()
-        epoch_steps += 1
+        train_loss += loss.item()
+        train_steps += 1
         optim.zero_grad()
         loss.backward()
         if train:
             optim.step()
 
-    if epoch_loss < best_epoch_loss:
-        best_epoch_loss = epoch_loss
+    if train_loss < best_train_loss:
+        best_train_loss = train_loss
         no_improvement = 0
     else:
         no_improvement += 1
@@ -210,4 +209,4 @@ for epoch in range(args.epochs):
         test_loss += loss.item()
         test_steps += 1
 
-    print(f'train_length={args.train_length} train_ce={epoch_loss/epoch_steps/math.log(2)} train_acc={epoch_correct/epoch_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}')
+    print(f'train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}')

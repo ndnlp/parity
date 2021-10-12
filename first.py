@@ -2,7 +2,6 @@ import torch
 import encoder
 import math
 import random
-import tqdm
 import sys
 import argparse
 
