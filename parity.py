@@ -14,32 +14,37 @@ args = ap.parse_args()
 
 log_sigmoid = torch.nn.LogSigmoid()
 
+class PositionEncoding(torch.nn.Module):
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+
+    def forward(self, n):
+        p = torch.arange(0, n).to(torch.float).unsqueeze(1)
+        pe = torch.cat([
+            p / n,
+            torch.cos(p*math.pi),
+            torch.zeros(n, self.size-2)
+        ], dim=1)
+        return pe
+
 class Model(torch.nn.Module):
     def __init__(self, alphabet_size, size):
         super().__init__()
-        
-        self.word_embedding = torch.nn.Embedding(num_embeddings=alphabet_size, embedding_dim=size)
-        n_max = max(args.train_length, args.test_length)
-        self.pos_embedding = torch.stack([
-            torch.arange(0, n_max+1, dtype=torch.float),
-            torch.cos(torch.arange(0, n_max+1, dtype=torch.float)*math.pi)
-        ], dim=1)
-        self.pos_adapter = torch.nn.Linear(self.pos_embedding.size()[1], size)
 
-        encoder_layer = encoder.PostnormTransformerEncoderLayer(d_model=size, nhead=4, dim_feedforward=size*4, dropout=0.)
-        #encoder_layer = encoder.ScaledTransformerEncoderLayer(d_model=size, nhead=4, dim_feedforward=size*4, dropout=0.)
-        #encoder_layer = encoder.SigmoidTransformerEncoderLayer(d_model=size, nhead=4, dim_feedforward=size*4, dropout=0.)
+        self.pos_encoding = PositionEncoding(size)
+        self.word_embedding = torch.nn.Embedding(num_embeddings=alphabet_size, embedding_dim=size)
+
+        encoder_layer = encoder.TransformerEncoderLayer(d_model=size, nhead=4, dim_feedforward=size*4, dropout=0.)
         self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=2)
 
         self.output_layer = torch.nn.Linear(size, 1)
 
     def forward(self, w):
-        p = self.pos_embedding[:len(w)].clone()
-        p[:,0] /= len(w)
-        x = self.word_embedding(w) + self.pos_adapter(p)
+        x = self.word_embedding(w) + self.pos_encoding(len(w))
         y = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
-        y = y[-1]
-        return self.output_layer(y)
+        z = self.output_layer(y[-1])
+        return z
 
 model = Model(3, args.size)
 optim = torch.optim.Adam(model.parameters(), lr=0.0003)

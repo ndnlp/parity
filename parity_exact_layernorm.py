@@ -18,6 +18,20 @@ args = ap.parse_args()
 
 log_sigmoid = torch.nn.LogSigmoid()
 
+class PositionEncoding(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, n):
+        zero = torch.zeros(n)
+        pos = torch.arange(0, n).to(torch.float)
+        pe = torch.stack([zero]*3 +
+                         [pos / n,
+                          torch.cos(pos*math.pi)] +
+                         [zero]*5,
+                         dim=1)
+        return pe
+
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
         super().__init__(20, 2, 3, dropout=args.dropout)
@@ -156,6 +170,7 @@ class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.word_embedding = torch.eye(3, 10)
+        self.pos_encoding = PositionEncoding()
         self.transformer_encoder = MyTransformerEncoder()
         self.output_layer = torch.nn.Linear(20, 1)
         self.output_layer.weight = torch.nn.Parameter(torch.tensor(
@@ -164,14 +179,8 @@ class Model(torch.nn.Module):
         self.output_layer.bias = torch.nn.Parameter(torch.tensor([0.]))
 
     def forward(self, w):
-        p = torch.stack([torch.zeros(len(w))]*3 +
-                        [torch.arange(0, len(w), dtype=torch.float) / len(w),
-                         torch.cos(torch.arange(0, len(w), dtype=torch.float)*math.pi)] +
-                        [torch.zeros(len(w))]*5,
-                        dim=1)
-        x = torch.cat([self.word_embedding[w] + p,
-                       -(self.word_embedding[w] + p)],
-                      dim=1)
+        x = self.word_embedding[w] + self.pos_encoding(len(w))
+        x = torch.cat([x, -x], dim=-1)
         y = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
         z = self.output_layer(y[-1])
         return z

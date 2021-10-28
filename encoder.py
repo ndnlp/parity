@@ -2,7 +2,6 @@ import torch
 import math
 
 class SigmoidAttention(torch.nn.Module):
-    """No dropout."""
     def __init__(self, embed_dim, num_heads):
         super(SigmoidAttention, self).__init__()
         self.embed_dim = embed_dim
@@ -36,34 +35,16 @@ class SigmoidAttention(torch.nn.Module):
         
         q = q / math.sqrt(embed_dim)
         attn = torch.bmm(q, k.transpose(-2, -1))
-        #attn = torch.nn.functional.softmax(attn, dim=-1)
         attn = torch.sigmoid(attn) #/ math.sqrt(src_len)
         attn_output = torch.bmm(attn, v)
         attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, self.embed_dim)
         attn_output = torch.nn.functional.linear(attn_output, self.out_proj.weight, self.out_proj.bias)
-        return attn_output, None
-    
-class SigmoidTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
-    def __init__(self, d_model, nhead, dim_feedforward, dropout=0.1):
-        super(SigmoidTransformerEncoderLayer, self).__init__(d_model, nhead, dim_feedforward, dropout)
-        self.self_attn = SigmoidAttention(d_model, nhead)
+        return attn_output, attn
 
-    def forward(self, src, src_mask=None, src_key_padding_mask=None):
-        src2, self.last_weights = self.self_attn(src, src, src)
-        src = src + self.dropout1(src2)
-        src = self.norm1(src)
-        src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
-        src = src + self.dropout2(src2)
-        src = self.norm2(src2)
-        return src
-    
-class PostnormTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
-    """Norm after residual"""
+class TransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2, self.last_weights = self.self_attn(
-            src,
-            src,
-            src,
+            src, src, src,
             attn_mask=src_mask,
             key_padding_mask=src_key_padding_mask)
         src = src + self.dropout1(src2)
@@ -72,7 +53,7 @@ class PostnormTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
         src = src + self.dropout2(src2)
         src = self.norm2(src)
         return src
-
+    
 class ScaledTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2, self.last_weights = self.self_attn(
