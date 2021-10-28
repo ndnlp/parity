@@ -9,7 +9,6 @@ ap.add_argument('--train_length', dest='train_length', type=int, default=100)
 ap.add_argument('--test_length', dest='test_length', type=int, default=100)
 ap.add_argument('--epochs', dest='epochs', type=int, default=100)
 ap.add_argument('--steps', dest='steps', type=int, default=100)
-ap.add_argument('--big', dest='big', type=float, default=1.)
 ap.add_argument('--size', dest='size', type=int, default=64)
 args = ap.parse_args()
 
@@ -96,7 +95,7 @@ for epoch in range(args.epochs):
         test_loss += loss.item()
         test_steps += 1
         
-    print(f'train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}')
+    print(f'train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
 
     """if n0_max < n_max:
         #if train_loss/train_steps/math.log(2) < 0.1:

@@ -32,8 +32,8 @@ class Model(torch.nn.Module):
         ], dim=1).to(torch.float)
         self.pos_adapter = torch.nn.Linear(self.pos_embedding.size()[1], size)
 
-        encoder_layer = encoder.PostnormTransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
-        #encoder_layer = encoder.ScaledTransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
+        #encoder_layer = encoder.PostnormTransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
+        encoder_layer = encoder.ScaledTransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
         #encoder_layer.norm1.eps = encoder_layer.norm2.eps = 0.
         self.encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=2)
 
