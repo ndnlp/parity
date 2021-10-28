@@ -44,7 +44,6 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
             # W^V
             [[0,1,0,0,0,0,0,0,0,0],   # count 1s  (k)
              [0,0,1,0,0,0,0,0,0,0]]+   # count CLS (1)
-             #[0,0,0,1,0,0,0,0,0,0]]+   # copy i/(n+1)
             [[0]*10]*8,
             dtype=torch.float))
 
@@ -149,7 +148,7 @@ class Model(torch.nn.Module):
         super().__init__()
         self.word_embedding = torch.eye(3, 10)
         self.pos_encoding = PositionEncoding()
-        self.transformer_encoder = MyTransformerEncoder()
+        self.encoder = MyTransformerEncoder()
         self.output_layer = torch.nn.Linear(10, 1)
         self.output_layer.weight = torch.nn.Parameter(torch.tensor(
             [[0,0,0,0,0,0,0,0,1,0]], dtype=torch.float))
@@ -157,7 +156,7 @@ class Model(torch.nn.Module):
 
     def forward(self, w):
         x = self.word_embedding[w] + self.pos_encoding(len(w))
-        y = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
+        y = self.encoder(x.unsqueeze(1)).squeeze(1)
         z = self.output_layer(y[-1])
         return z
 
@@ -193,7 +192,7 @@ for epoch in range(args.epochs):
         if train:
             optim.step()
 
-    if train_loss < best_train_loss:
+    """if train_loss < best_train_loss:
         best_train_loss = train_loss
         no_improvement = 0
     else:
@@ -201,22 +200,23 @@ for epoch in range(args.epochs):
         if no_improvement >= 10:
             optim.param_groups[0]['lr'] *= 0.5
             print(f"lr={optim.param_groups[0]['lr']}")
-            no_improvement = 0
-        
-    test_loss = 0
-    test_steps = 0
-    test_correct = 0
-    for step in range(args.steps):
-        n = args.test_length
-        w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
-        label = len([a for a in w if a == 1]) % 2 == 1
-        output = model(w)
-        
-        # Cross-entropy loss
-        if not label: output = -output
-        if output > 0: test_correct += 1
-        loss = -log_sigmoid(output)
-        test_loss += loss.item()
-        test_steps += 1
+            no_improvement = 0"""
+
+    with torch.no_grad():
+        test_loss = 0
+        test_steps = 0
+        test_correct = 0
+        for step in range(args.steps):
+            n = args.test_length
+            w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
+            label = len([a for a in w if a == 1]) % 2 == 1
+            output = model(w)
+
+            # Cross-entropy loss
+            if not label: output = -output
+            if output > 0: test_correct += 1
+            loss = -log_sigmoid(output)
+            test_loss += loss.item()
+            test_steps += 1
 
     print(f'train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)

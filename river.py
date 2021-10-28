@@ -35,10 +35,8 @@ for x, ymean, ystd in data:
     print(rf'      ({x},{(ymean-ystd) * scale})')
 print(r'    };')
 
-print(r'    \addplot fill between[of=above and below];')
+print(r'    \addplot[fill opacity=0.2] fill between[of=above and below];')
 
 print(r'  \end{axis}')
 print(r'\end{tikzpicture}')
 print(r'\end{document}')
-
-    

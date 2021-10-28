@@ -10,6 +10,8 @@ ap.add_argument('--test_length', dest='test_length', type=int, default=100)
 ap.add_argument('--epochs', dest='epochs', type=int, default=100)
 ap.add_argument('--steps', dest='steps', type=int, default=100)
 ap.add_argument('--size', dest='size', type=int, default=64)
+ap.add_argument('--layers', dest='layers', type=int, default=2)
+ap.add_argument('--heads', dest='heads', type=int, default=2)
 args = ap.parse_args()
 
 log_sigmoid = torch.nn.LogSigmoid()
@@ -17,14 +19,16 @@ log_sigmoid = torch.nn.LogSigmoid()
 class PositionEncoding(torch.nn.Module):
     def __init__(self, size):
         super().__init__()
+        assert size % 2 == 0
         self.size = size
+        self.scales = torch.nn.Parameter(torch.normal(0, 1., (size,)))
 
     def forward(self, n):
         p = torch.arange(0, n).to(torch.float).unsqueeze(1)
         pe = torch.cat([
-            p / n,
-            torch.cos(p*math.pi),
-            torch.zeros(n, self.size-2)
+            p / n * torch.exp(self.scales[:n//2]),
+            torch.cos(p*math.pi * torch.exp(self.scales[n//2:])),
+            #torch.zeros(n, self.size-2)
         ], dim=1)
         return pe
 
@@ -35,8 +39,8 @@ class Model(torch.nn.Module):
         self.pos_encoding = PositionEncoding(size)
         self.word_embedding = torch.nn.Embedding(num_embeddings=alphabet_size, embedding_dim=size)
 
-        encoder_layer = encoder.TransformerEncoderLayer(d_model=size, nhead=4, dim_feedforward=size*4, dropout=0.)
-        self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=2)
+        encoder_layer = encoder.TransformerEncoderLayer(d_model=size, nhead=args.heads, dim_feedforward=size*4, dropout=0.)
+        self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=args.layers)
 
         self.output_layer = torch.nn.Linear(size, 1)
 

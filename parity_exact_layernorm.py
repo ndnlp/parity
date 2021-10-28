@@ -171,7 +171,7 @@ class Model(torch.nn.Module):
         super().__init__()
         self.word_embedding = torch.eye(3, 10)
         self.pos_encoding = PositionEncoding()
-        self.transformer_encoder = MyTransformerEncoder()
+        self.encoder = MyTransformerEncoder()
         self.output_layer = torch.nn.Linear(20, 1)
         self.output_layer.weight = torch.nn.Parameter(torch.tensor(
             [[0,0,0,0,0,0,0,0,1,0]+[0]*10],
@@ -181,7 +181,7 @@ class Model(torch.nn.Module):
     def forward(self, w):
         x = self.word_embedding[w] + self.pos_encoding(len(w))
         x = torch.cat([x, -x], dim=-1)
-        y = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
+        y = self.encoder(x.unsqueeze(1)).squeeze(1)
         z = self.output_layer(y[-1])
         return z
 
@@ -227,23 +227,28 @@ for epoch in range(args.epochs):
                 optim.param_groups[0]['lr'] *= 0.5
                 print(f"lr={optim.param_groups[0]['lr']}")
                 no_improvement = 0"""
-        
-    test_loss = 0
-    test_steps = 0
-    test_correct = 0
-    for step in range(args.steps):
-        n = args.test_length
-        w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
-        label = len([a for a in w if a == 1]) % 2 == 1
-        output = model(w)
-        
-        if not label: output = -output
-        if output > 0: test_correct += 1
-        loss = -log_sigmoid(output)
-        test_loss += loss.item()
-        test_steps += 1
+
+    with torch.no_grad():
+        random.seed(123)
+        val = epoch/(args.epochs-1)*2
+        model.encoder.layers[0].self_attn.in_proj_weight[40][1] = val
+
+        test_loss = 0
+        test_steps = 0
+        test_correct = 0
+        for step in range(args.steps):
+            n = args.test_length
+            w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
+            label = len([a for a in w if a == 1]) % 2 == 1
+            output = model(w)
+
+            if not label: output = -output
+            if output > 0: test_correct += 1
+            loss = -log_sigmoid(output)
+            test_loss += loss.item()
+            test_steps += 1
 
     if args.train:
-        print(f'train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
+        print(f'epoch={epoch+1} train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
     else:
-        print(f'test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
+        print(f'epoch={epoch+1} val={val} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
