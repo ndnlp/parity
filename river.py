@@ -1,10 +1,6 @@
 import sys
 import math
 
-#scale = 1/100/math.log(2)
-#scale = 100
-scale = 1
-
 data = []
 for line in sys.stdin:
     x, ymean, ystd = line.split()
@@ -22,17 +18,17 @@ print(r'  \begin{axis}')
 
 print(r'    \addplot[mark=none] coordinates {')
 for x, ymean, ystd in data:
-    print(rf'      ({x},{ymean * scale})')
+    print(rf'      ({x},{ymean})')
 print(r'    };')
 
 print(r'    \addplot[draw=none,mark=none,name path=above] coordinates {')
 for x, ymean, ystd in data:
-    print(rf'      ({x},{(ymean+ystd) * scale})')
+    print(rf'      ({x},{ymean+ystd})')
 print(r'    };')
 
 print(r'    \addplot[draw=none,mark=none,name path=below] coordinates {')
 for x, ymean, ystd in data:
-    print(rf'      ({x},{(ymean-ystd) * scale})')
+    print(rf'      ({x},{ymean-ystd})')
 print(r'    };')
 
 print(r'    \addplot[fill opacity=0.2] fill between[of=above and below];')

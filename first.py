@@ -1,3 +1,5 @@
+# Train a transformer from scratch on FIRST, using fixed positional encodings.
+
 import torch
 import encoder
 import math
@@ -24,25 +26,32 @@ ap.add_argument('--test_length', type=int, default=1000)
 ap.add_argument('--trial', type=int, default=0)
 ap.add_argument('--epochs', type=int, default=100)
 ap.add_argument('--steps', type=int, default=100)
+ap.add_argument('--layers', dest='layers', type=int, default=2)
+ap.add_argument('--heads', dest='heads', type=int, default=1)
+ap.add_argument('--d_model', type=int, default=16)
+ap.add_argument('--d_ffnn', type=int, default=64)
+ap.add_argument('--scaled', type=bool, default=False, help='log-length scaled attention')
+ap.add_argument('--eps', type=float, default=1e-5, help='Value added to denominator in layer normalization')
 args = ap.parse_args()
 
 alphabet = ["0", "1", "$"]
 alphabet_index = {a:i for i,a in enumerate(alphabet)}
-size = 16
 
 class Model(torch.nn.Module):
-    def __init__(self, alphabet_size, size):
+    def __init__(self, alphabet_size, layers, heads, d_model, d_ffnn, scaled=False, eps=1e-5):
         super().__init__()
         
-        self.word_embedding = torch.nn.Embedding(num_embeddings=alphabet_size, embedding_dim=size)
-        self.pos_encoding = PositionEncoding(size)
+        self.word_embedding = torch.nn.Embedding(num_embeddings=alphabet_size, embedding_dim=d_model)
+        self.pos_encoding = PositionEncoding(d_model)
 
-        encoder_layer = encoder.TransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
-        #encoder_layer = encoder.ScaledTransformerEncoderLayer(d_model=size, nhead=1, dim_feedforward=size*4, dropout=0.)
-        #encoder_layer.norm1.eps = encoder_layer.norm2.eps = 0.
-        self.encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=2)
+        if scaled:
+            encoder_layer = encoder.ScaledTransformerEncoderLayer(d_model=d_model, nhead=heads, dim_feedforward=d_ffnn, dropout=0.)
+        else:
+            encoder_layer = encoder.TransformerEncoderLayer(d_model=d_model, nhead=heads, dim_feedforward=d_ffnn, dropout=0.)
+        encoder_layer.norm1.eps = encoder_layer.norm2.eps = eps
+        self.encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=layers)
 
-        self.output_layer = torch.nn.Linear(size, 1)
+        self.output_layer = torch.nn.Linear(d_model, 1)
 
     def forward(self, w):
         x = self.word_embedding(w) + self.pos_encoding(len(w))
@@ -51,7 +60,7 @@ class Model(torch.nn.Module):
         z = self.output_layer(y)
         return z
 
-model = Model(len(alphabet), size)
+model = Model(len(alphabet), args.layers, args.heads, args.d_model, args.d_ffnn, args.scaled, args.eps)
 optim = torch.optim.Adam(model.parameters(), lr=0.0003)
 
 for epoch in range(args.epochs):

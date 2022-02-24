@@ -35,7 +35,7 @@ class SigmoidAttention(torch.nn.Module):
         
         q = q / math.sqrt(embed_dim)
         attn = torch.bmm(q, k.transpose(-2, -1))
-        attn = torch.sigmoid(attn) #/ math.sqrt(src_len)
+        attn = torch.sigmoid(attn)
         attn_output = torch.bmm(attn, v)
         attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, self.embed_dim)
         attn_output = torch.nn.functional.linear(attn_output, self.out_proj.weight, self.out_proj.bias)
@@ -57,7 +57,7 @@ class TransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
 class ScaledTransformerEncoderLayer(torch.nn.TransformerEncoderLayer):
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2, self.last_weights = self.self_attn(
-            src*math.log(len(src)), #/2,
+            src*math.log(len(src)),
             src,
             src,
             attn_mask=src_mask,

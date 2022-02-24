@@ -10,10 +10,9 @@ ap.add_argument('--test_length', dest='test_length', type=int, default=100)
 ap.add_argument('--epochs', dest='epochs', type=int, default=100)
 ap.add_argument('--steps', dest='steps', type=int, default=100)
 ap.add_argument('--big', dest='big', type=float, default=1.)
+ap.add_argument('--perturb', dest='perturb', type=float, default=0, help='randomly perturb parameters')
+ap.add_argument('--train', dest='train', action='store_true', default=False)
 args = ap.parse_args()
-
-perturb = 0.
-train = False
 
 log_sigmoid = torch.nn.LogSigmoid()
 
@@ -71,7 +70,7 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
              [0, 0, 0]], 
             dtype=torch.float))
         self.linear2.bias = torch.nn.Parameter(torch.zeros(10))
-    
+        
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         src2 = self.self_attn(src, src, src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
@@ -163,44 +162,31 @@ class Model(torch.nn.Module):
 model = Model()
 optim = torch.optim.Adam(model.parameters(), lr=3e-4)
 
-best_train_loss = float('inf')
-no_improvement = 0
-
 # Perturb parameters
-if perturb > 0:
+if args.perturb > 0:
     with torch.no_grad():
         for p in model.parameters():
-            p += torch.randn(p.size()) * perturb
+            p += torch.randn(p.size()) * args.perturb
 
+if not args.train: args.epochs = 1            
 for epoch in range(args.epochs):
-    train_loss = 0
-    train_steps = 0
-    train_correct = 0
-
-    for step in range(args.steps):
-        n = args.train_length
-        w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
-        label = len([a for a in w if a == 1]) % 2 == 1
-        output = model(w)
-        if not label: output = -output
-        if output > 0: train_correct += 1
-        loss = -log_sigmoid(output)
-        train_loss += loss.item()
-        train_steps += 1
-        optim.zero_grad()
-        loss.backward()
-        if train:
+    if args.train:
+        train_loss = 0
+        train_steps = 0
+        train_correct = 0
+        for step in range(args.steps):
+            n = args.train_length
+            w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
+            label = len([a for a in w if a == 1]) % 2 == 1
+            output = model(w)
+            if not label: output = -output
+            if output > 0: train_correct += 1
+            loss = -log_sigmoid(output)
+            train_loss += loss.item()
+            train_steps += 1
+            optim.zero_grad()
+            loss.backward()
             optim.step()
-
-    """if train_loss < best_train_loss:
-        best_train_loss = train_loss
-        no_improvement = 0
-    else:
-        no_improvement += 1
-        if no_improvement >= 10:
-            optim.param_groups[0]['lr'] *= 0.5
-            print(f"lr={optim.param_groups[0]['lr']}")
-            no_improvement = 0"""
 
     with torch.no_grad():
         test_loss = 0
@@ -211,12 +197,12 @@ for epoch in range(args.epochs):
             w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
             label = len([a for a in w if a == 1]) % 2 == 1
             output = model(w)
-
-            # Cross-entropy loss
             if not label: output = -output
             if output > 0: test_correct += 1
             loss = -log_sigmoid(output)
             test_loss += loss.item()
             test_steps += 1
 
-    print(f'train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
+    if args.train:
+        print(f'train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} ', end='')
+    print(f'test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)

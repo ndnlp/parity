@@ -3,8 +3,8 @@ import collections
 import sys
 
 ap = argparse.ArgumentParser()
-ap.add_argument('-k', type=int, dest="key")
-ap.add_argument('-v', type=int, dest="val")
+ap.add_argument('-k', type=int, dest="key", default=1)
+ap.add_argument('-v', type=int, dest="val", default=2)
 args = ap.parse_args()
 
 s = collections.defaultdict(float)

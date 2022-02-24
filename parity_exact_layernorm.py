@@ -13,7 +13,6 @@ ap.add_argument('--big', dest='big', type=float, default=1.)
 ap.add_argument('--eps', dest='eps', type=float, default=1e-5)
 ap.add_argument('--perturb', dest='perturb', type=float, default=0)
 ap.add_argument('--train', dest='train', default=False, action='store_true')
-ap.add_argument('--dropout', dest='dropout', type=float, default=0)
 args = ap.parse_args()
 
 log_sigmoid = torch.nn.LogSigmoid()
@@ -34,7 +33,7 @@ class PositionEncoding(torch.nn.Module):
 
 class FirstLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
-        super().__init__(20, 2, 3, dropout=args.dropout)
+        super().__init__(20, 2, 3, dropout=0.)
         self.self_attn.in_proj_weight = torch.nn.Parameter(torch.tensor(
             # First head attends to all symbols,
             # second head does nothing.
@@ -92,7 +91,7 @@ class FirstLayer(torch.nn.TransformerEncoderLayer):
 
 class SecondLayer(torch.nn.TransformerEncoderLayer):
     def __init__(self):
-        super().__init__(20, 2, 3, dropout=args.dropout)
+        super().__init__(20, 2, 3, dropout=0.)
         self.self_attn.in_proj_weight = torch.nn.Parameter(torch.tensor(
             # W^Q
             # Heads 1 and 2 attend from CLS
@@ -188,27 +187,23 @@ class Model(torch.nn.Module):
 model = Model()
 optim = torch.optim.Adam(model.parameters(), lr=3e-4)
 
-best_train_loss = float('inf')
-no_improvement = 0
-
 # Perturb parameters
 if args.perturb > 0:
     with torch.no_grad():
         for p in model.parameters():
             p += torch.randn(p.size()) * args.perturb
 
+if not args.train: args.epochs = 1            
 for epoch in range(args.epochs):
     if args.train:
         train_loss = 0
         train_steps = 0
         train_correct = 0
-
         for step in range(args.steps):
             n = args.train_length
             w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
             label = len([a for a in w if a == 1]) % 2 == 1
             output = model(w)
-
             if not label: output = -output
             if output > 0: train_correct += 1
             loss = -log_sigmoid(output)
@@ -218,20 +213,9 @@ for epoch in range(args.epochs):
             loss.backward()
             optim.step()
 
-        """if train_loss < best_train_loss:
-            best_train_loss = train_loss
-            no_improvement = 0
-        else:
-            no_improvement += 1
-            if no_improvement >= 10:
-                optim.param_groups[0]['lr'] *= 0.5
-                print(f"lr={optim.param_groups[0]['lr']}")
-                no_improvement = 0"""
-
     with torch.no_grad():
-        random.seed(123)
-        val = epoch/(args.epochs-1)*2
-        model.encoder.layers[0].self_attn.in_proj_weight[40][1] = val
+        # This is for plotting one cross-section of the loss surface
+        #model.encoder.layers[0].self_attn.in_proj_weight[40][1] = val
 
         test_loss = 0
         test_steps = 0
@@ -241,7 +225,6 @@ for epoch in range(args.epochs):
             w = torch.tensor([random.randrange(2) for i in range(n)]+[2])
             label = len([a for a in w if a == 1]) % 2 == 1
             output = model(w)
-
             if not label: output = -output
             if output > 0: test_correct += 1
             loss = -log_sigmoid(output)
@@ -249,6 +232,5 @@ for epoch in range(args.epochs):
             test_steps += 1
 
     if args.train:
-        print(f'epoch={epoch+1} train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
-    else:
-        print(f'epoch={epoch+1} val={val} test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
+        print(f'epoch={epoch+1} train_length={args.train_length} train_ce={train_loss/train_steps/math.log(2)} train_acc={train_correct/train_steps} ', end='')
+    print(f'test_length={args.test_length} test_ce={test_loss/test_steps/math.log(2)} test_acc={test_correct/test_steps}', flush=True)
