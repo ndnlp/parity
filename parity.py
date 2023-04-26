@@ -29,8 +29,8 @@ class PositionEncoding(torch.nn.Module):
     def forward(self, n):
         p = torch.arange(0, n).to(torch.float).unsqueeze(1)
         pe = torch.cat([
-            p / n * torch.exp(self.scales[:n//2]),
-            torch.cos(p*math.pi * torch.exp(self.scales[n//2:])),
+            p / n * torch.exp(self.scales[:self.size//2]),
+            torch.cos(p*math.pi * torch.exp(self.scales[self.size//2:])),
         ], dim=1)
         return pe
 
